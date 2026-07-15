@@ -42,11 +42,20 @@ export function createVercelBlobAdapter({
           adminHandler: {
             path: '@payloadcms/storage-vercel-blob/client#VercelBlobClientUploadHandler',
           },
-          generate: async ({ collectionSlug, docPrefix, filename, filesize, mimeType, req }) => {
+          generate: async ({
+            collectionSlug,
+            docPrefix,
+            filename,
+            filesize,
+            mimeType,
+            overrideAccess,
+            req,
+          }) => {
             if (
-              clientUploadsAccess
+              !overrideAccess &&
+              (clientUploadsAccess
                 ? !(await clientUploadsAccess({ collectionSlug, req }))
-                : !req.user
+                : !req.user)
             ) {
               throw new Forbidden(req.t)
             }
@@ -82,6 +91,7 @@ export function createVercelBlobAdapter({
               },
             }
           },
+          useInAdmin: true,
         }
       : undefined,
 

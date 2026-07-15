@@ -52,6 +52,7 @@ export function createS3Adapter({
             getStorageClient,
             useCompositePrefixes,
           }),
+          useInAdmin: true,
         }
       : undefined,
 

@@ -1,9 +1,47 @@
 import type { Endpoint } from '../../config/types.js'
-import type { UploadInstructionsRequest } from '../types.js'
+import type { PayloadRequest } from '../../types/index.js'
+import type { UploadInstructions, UploadInstructionsRequest } from '../types.js'
 
-import { APIError } from '../../errors/index.js'
+import { APIError, Forbidden } from '../../errors/index.js'
+import {
+  deleteStagedFile,
+  generateStagedUploadInstructions,
+  uploadStagedFile,
+} from '../stagedUpload.js'
 
 const bytesToMB = (bytes: number) => bytes / 1024 / 1024
+
+export const getUploadInstructions = async ({
+  overrideAccess = false,
+  req,
+  ...upload
+}: {
+  overrideAccess?: boolean
+  req: PayloadRequest
+} & UploadInstructionsRequest): Promise<UploadInstructions> => {
+  const collection = req.payload.collections[upload.collectionSlug]
+  const uploadInstructions = collection?.config?.upload?.uploadInstructions
+
+  if (!collection?.config?.upload) {
+    throw new APIError(`Upload collection ${upload.collectionSlug} was not found`, 400)
+  }
+
+  const filesizeLimit = req.payload.config.upload.limits?.fileSize
+  if (filesizeLimit && upload.filesize > filesizeLimit) {
+    throw new APIError(
+      `Exceeded file size limit. Limit: ${bytesToMB(filesizeLimit).toFixed(2)}MB, got: ${bytesToMB(upload.filesize).toFixed(2)}MB`,
+      400,
+    )
+  }
+
+  if (!uploadInstructions && !overrideAccess && !req.user) {
+    throw new Forbidden(req.t)
+  }
+
+  return uploadInstructions
+    ? uploadInstructions.generate({ ...upload, overrideAccess, req })
+    : generateStagedUploadInstructions({ ...upload, req })
+}
 
 export const uploadInstructionsEndpoint: Endpoint = {
   handler: async (req) => {
@@ -26,26 +64,26 @@ export const uploadInstructionsEndpoint: Endpoint = {
     }
 
     const uploadRequest = upload as UploadInstructionsRequest
-    const collection = req.payload.collections[uploadRequest.collectionSlug]
-    const uploadInstructions = collection?.config?.upload?.uploadInstructions
-
-    if (!collection || !uploadInstructions) {
-      throw new APIError(
-        `Upload instructions are not configured for ${uploadRequest.collectionSlug}`,
-        400,
-      )
-    }
-
-    const filesizeLimit = req.payload.config.upload.limits?.fileSize
-    if (filesizeLimit && uploadRequest.filesize > filesizeLimit) {
-      throw new APIError(
-        `Exceeded file size limit. Limit: ${bytesToMB(filesizeLimit).toFixed(2)}MB, got: ${bytesToMB(uploadRequest.filesize).toFixed(2)}MB`,
-        400,
-      )
-    }
-
-    return Response.json(await uploadInstructions.generate({ ...uploadRequest, req }))
+    return Response.json(await getUploadInstructions({ ...uploadRequest, req }))
   },
   method: 'post',
   path: '/upload-instructions',
 }
+
+/**
+ * Stores or removes temporary files when no adapter-specific upload instructions are available.
+ * PUT keeps the file until it is used in a document request.
+ * DELETE removes a file the client no longer needs.
+ */
+export const stagedUploadEndpoints: Endpoint[] = [
+  {
+    handler: uploadStagedFile,
+    method: 'put',
+    path: '/upload-instructions/:uploadId',
+  },
+  {
+    handler: deleteStagedFile,
+    method: 'delete',
+    path: '/upload-instructions/:uploadId',
+  },
+]
