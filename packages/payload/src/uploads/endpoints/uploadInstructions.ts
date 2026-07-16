@@ -2,6 +2,7 @@ import type { Endpoint } from '../../config/types.js'
 import type { PayloadRequest } from '../../types/index.js'
 import type { UploadInstructions, UploadInstructionsRequest } from '../types.js'
 
+import { getAccessResults } from '../../auth/getAccessResults.js'
 import { APIError, Forbidden } from '../../errors/index.js'
 import {
   deleteStagedFile,
@@ -34,8 +35,20 @@ export const getUploadInstructions = async ({
     )
   }
 
-  if (!uploadInstructions && !overrideAccess && !req.user) {
-    throw new Forbidden(req.t)
+  if (!uploadInstructions && !overrideAccess) {
+    // Staged uploads write to Payload before a document is saved. Require a signed-in user who
+    // can create or update documents in this collection.
+    if (!req.user) {
+      throw new Forbidden(req.t)
+    }
+
+    const collectionPermissions = (await getAccessResults({ req })).collections?.[
+      upload.collectionSlug
+    ]
+
+    if (!collectionPermissions?.create && !collectionPermissions?.update) {
+      throw new Forbidden(req.t)
+    }
   }
 
   return uploadInstructions
