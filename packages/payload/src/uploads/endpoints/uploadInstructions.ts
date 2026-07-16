@@ -4,6 +4,7 @@ import type { UploadInstructions, UploadInstructionsRequest } from '../types.js'
 
 import { getAccessResults } from '../../auth/getAccessResults.js'
 import { APIError, Forbidden } from '../../errors/index.js'
+import { checkFileRestrictions } from '../checkFileRestrictions.js'
 import {
   deleteStagedFile,
   generateStagedUploadInstructions,
@@ -34,6 +35,18 @@ export const getUploadInstructions = async ({
       400,
     )
   }
+
+  await checkFileRestrictions({
+    checkFileContents: false,
+    collection: collection.config,
+    file: {
+      name: upload.filename,
+      data: Buffer.alloc(0),
+      mimetype: upload.mimeType,
+      size: upload.filesize,
+    },
+    req,
+  })
 
   if (!uploadInstructions && !overrideAccess) {
     // Staged uploads write to Payload before a document is saved. Require a signed-in user who
